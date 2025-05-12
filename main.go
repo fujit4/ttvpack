@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -141,7 +142,10 @@ func sync(pluginsFilePath, packPath string) error {
 			continue
 		}
 
-		url := makeUrl(p)
+		url,err := makeUrl(p)
+		if err != nil {
+			return err
+		}
 
 		zipPath := filepath.Join(startPath, dirName+".zip")
 		if err := downloadZip(url, zipPath); err != nil {
@@ -237,15 +241,20 @@ func makeDirName(plugin Plugin) string {
 	return dir
 }
 
-func makeUrl(plugin Plugin) string {
-	url := ""
+func makeUrl(plugin Plugin) (string, error) {
+	targetUrl := ""
+	var err error
 	baseUrl := "https://github.com/"
 	if plugin.Tag == "master" || plugin.Tag == "main" {
-		url = path.Join(baseUrl, plugin.Repo, "archive/refs/heads/", plugin.Tag+".zip")
+		targetUrl, err = url.JoinPath(baseUrl, plugin.Repo, "archive/refs/heads/", plugin.Tag+".zip")
+		if err != nil {
+			return targetUrl, err
+		}
 	} else {
-		url = path.Join(baseUrl, plugin.Repo, "archive/refs/tags/", plugin.Tag+".zip")
+		targetUrl, err = url.JoinPath(baseUrl, plugin.Repo, "archive/refs/tags/", plugin.Tag+".zip")
+		return targetUrl, err
 	}
-	return url
+	return targetUrl, err
 }
 
 func downloadZip(url, dest string) error {
