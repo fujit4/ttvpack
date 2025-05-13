@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -22,17 +21,22 @@ import (
 // start:
 //   - repo: username/repo1
 //     tag: v1.0.0
+//     url: https://github.com/username/repo1/archive/refs/tags/v1.0.0.zip
 //   - repo: username/repo2
-//     tag: main
+//     branch: main
+//     url: https://github.com/username/repo2/archive/refs/heads/main.zip
 //
 // opt:
 //   - repo: username/repo3
-//     tag: v2.1.0
+//     branch: main
+//     url: https://github.com/username/repo3/archive/refs/heads/main.zip
 // ```
 
 type Plugin struct {
 	Repo string `yaml:"repo"`
 	Tag  string `yaml:"tag"`
+	Branch  string `yaml:"branch"`
+	Url  string `yaml:"url"`
 }
 
 type Plugins struct {
@@ -89,7 +93,7 @@ func remove() error {
 }
 
 func sync(pluginsFilePath, packPath string) error {
-	fmt.Println("sync")
+	fmt.Println("start sync")
 
 	startPath := filepath.Join(packPath, "start")
 	optPath := filepath.Join(packPath, "opt")
@@ -99,8 +103,8 @@ func sync(pluginsFilePath, packPath string) error {
 		return err
 	}
 	startPluginsMap := makePluginsMap(plugins.Start)
-	optPluginsMap := makePluginsMap(plugins.Opt)
-	fmt.Println(optPluginsMap)
+	// optPluginsMap := makePluginsMap(plugins.Opt)
+
 	// 前処理
 	os.MkdirAll(startPath, 0755)
 	os.MkdirAll(optPath, 0755)
@@ -112,7 +116,7 @@ func sync(pluginsFilePath, packPath string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(existedStartPlugins)
+
 	// ディレクトリリストをループし、pluginsの中に存在しない場合は、ディレクトリを削除する
 	for _, entry := range existedStartPlugins {
 		if _, ok := startPluginsMap[filepath.Base(entry)]; ok {
@@ -142,18 +146,15 @@ func sync(pluginsFilePath, packPath string) error {
 			continue
 		}
 
-		url,err := makeUrl(p)
-		if err != nil {
-			return err
-		}
 
 		zipPath := filepath.Join(startPath, dirName+".zip")
-		if err := downloadZip(url, zipPath); err != nil {
+		if err := downloadZip(p.Url, zipPath); err != nil {
 			return err
 		}
 
 		expandedPath := filepath.Join(startPath, dirName)
 		unzip(zipPath, expandedPath)
+		fmt.Println("installed ", expandedPath)
 	}
 
 	// startフォルダのリストに存在しなければ、ダウンロードする
@@ -237,25 +238,31 @@ func getPluginsFilePath() string {
 }
 
 func makeDirName(plugin Plugin) string {
-	dir := path.Base(plugin.Repo) + "-" + plugin.Tag
+	dir := path.Base(plugin.Repo)
+
+	if plugin.Tag != "" {
+		dir = dir + "-" + plugin.Tag
+	} else if plugin.Branch != "" {
+		dir = dir + "-" + plugin.Branch
+	}
 	return dir
 }
 
-func makeUrl(plugin Plugin) (string, error) {
-	targetUrl := ""
-	var err error
-	baseUrl := "https://github.com/"
-	if plugin.Tag == "master" || plugin.Tag == "main" {
-		targetUrl, err = url.JoinPath(baseUrl, plugin.Repo, "archive/refs/heads/", plugin.Tag+".zip")
-		if err != nil {
-			return targetUrl, err
-		}
-	} else {
-		targetUrl, err = url.JoinPath(baseUrl, plugin.Repo, "archive/refs/tags/", plugin.Tag+".zip")
-		return targetUrl, err
-	}
-	return targetUrl, err
-}
+// func makeUrl(plugin Plugin) (string, error) {
+// 	targetUrl := ""
+// 	var err error
+// 	baseUrl := "https://github.com/"
+// 	if plugin.Tag == "master" || plugin.Tag == "main" {
+// 		targetUrl, err = url.JoinPath(baseUrl, plugin.Repo, "archive/refs/heads/", plugin.Tag+".zip")
+// 		if err != nil {
+// 			return targetUrl, err
+// 		}
+// 	} else {
+// 		targetUrl, err = url.JoinPath(baseUrl, plugin.Repo, "archive/refs/tags/", plugin.Tag+".zip")
+// 		return targetUrl, err
+// 	}
+// 	return targetUrl, err
+// }
 
 func downloadZip(url, dest string) error {
 	resp, err := http.Get(url)
