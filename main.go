@@ -152,9 +152,17 @@ func sync(pluginsFilePath, packPath string) error {
 			return err
 		}
 
+		fmt.Println("zip ", zipPath)
 		expandedPath := filepath.Join(startPath, dirName)
-		unzip(zipPath, expandedPath)
-		fmt.Println("installed ", expandedPath)
+		// unzip(zipPath, expandedPath)
+		// unzip(zipPath, ".")
+		if err := unzipWithoutTopLevel(zipPath, expandedPath); err != nil {
+			return err
+		}
+		if err := os.Remove(zipPath); err != nil {
+			return err
+		}
+		fmt.Println("installed ", dirName)
 	}
 
 	// startフォルダのリストに存在しなければ、ダウンロードする
@@ -240,11 +248,11 @@ func getPluginsFilePath() string {
 func makeDirName(plugin Plugin) string {
 	dir := path.Base(plugin.Repo)
 
-	if plugin.Tag != "" {
-		dir = dir + "-" + plugin.Tag
-	} else if plugin.Branch != "" {
-		dir = dir + "-" + plugin.Branch
-	}
+	// if plugin.Tag != "" {
+	// 	dir = dir + "-" + plugin.Tag
+	// } else if plugin.Branch != "" {
+	// 	dir = dir + "-" + plugin.Branch
+	// }
 	return dir
 }
 
@@ -329,4 +337,75 @@ func unzip(src, dest string) error {
 	}
 
 	return nil
+}
+
+
+func unzipWithoutTopLevel(src, dest string) error {
+    r, err := zip.OpenReader(src)
+    if err != nil {
+        return err
+    }
+    defer r.Close()
+
+    // トップレベルディレクトリ名を特定
+    topLevelDir := ""
+    for _, f := range r.File {
+        parts := strings.Split(f.Name, "/")
+        if len(parts) > 1 {
+            if topLevelDir == "" {
+                topLevelDir = parts[0]
+            } else if topLevelDir != parts[0] {
+                topLevelDir = ""
+                break
+            }
+        } else {
+            topLevelDir = ""
+            break
+        }
+    }
+
+    for _, f := range r.File {
+        // トップレベルディレクトリを除外
+        relPath := f.Name
+        if topLevelDir != "" {
+            if strings.HasPrefix(f.Name, topLevelDir+"/") {
+                relPath = strings.TrimPrefix(f.Name, topLevelDir+"/")
+            } else {
+                // 一致しない場合はそのまま
+                relPath = f.Name
+            }
+        }
+
+        fpath := filepath.Join(dest, relPath)
+
+        if f.FileInfo().IsDir() {
+            os.MkdirAll(fpath, os.ModePerm)
+            continue
+        }
+
+        if err := os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
+            return err
+        }
+
+        outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+        if err != nil {
+            return err
+        }
+
+        rc, err := f.Open()
+        if err != nil {
+            outFile.Close()
+            return err
+        }
+
+        _, err = io.Copy(outFile, rc)
+
+        outFile.Close()
+        rc.Close()
+
+        if err != nil {
+            return err
+        }
+    }
+    return nil
 }
